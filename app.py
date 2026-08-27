@@ -100,7 +100,7 @@ with tab2:
     f1_B = f1_score(y_test_B, preds_B, average='macro')
 
     delta_val = f"{(f1_B - f1_A) * 100:.2f}%"
-    st.metric(label="F1-Score (Ázsiai Adatokon)", value=f"{f1_B * 100:.2f}%", delta=delta_val, delta_color="inverse")
+    st.metric(label="F1-Score (Ázsiai Adatokon)", value=f"{f1_B * 100:.2f}%", delta=delta_val, delta_color="red")
 
     st.subheader("Miért hibázott az AI? (SHAP Analízis)")
     st.write(
