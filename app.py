@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from keras.src.metrics.accuracy_metrics import accuracy
-from numpy.ma.extras import average
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import f1_score, accuracy_score
 from sklearn.preprocessing import LabelEncoder
