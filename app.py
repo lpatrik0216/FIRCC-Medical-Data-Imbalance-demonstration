@@ -9,12 +9,33 @@ import shap
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="INPACE Living Lab - AI Data Drift", layout="wide")
-st.title("Medical AI Data Drift demonstration")
-st.markdown(
-    "What are the risks of deploying an AI model trained on a single population to a new demographic, and how can we mitigate them?")
+
+# --- PRESENTATION CONTEXT & INTRO ---
+st.title("Medical AI Data Drift Demonstration")
+
+st.markdown("""
+### The Problem: Medical Data Drift
+When an AI model is trained on a specific population (e.g., Western demographics), it learns the normal biological ranges unique to that group. However, applying this exact same model to a new demographic (e.g., Asian populations) can lead to dangerous misdiagnoses due to natural biological variations in hormone levels and age distributions. This phenomenon is known as **Data Drift**.
+
+### The Hypothesis & Technical Approach
+We hypothesize that instead of deploying a failing model or building entirely separate models from scratch, we can **recalibrate a single model** by providing demographic context. By injecting an `is_asian` flag, the AI can learn population-specific thresholds dynamically and maintain fair, accurate decision-making across diverse groups.
+
+**The Model:** We are utilizing a **Random Forest Classifier**, an ensemble machine learning algorithm that builds multiple decision trees and merges their results together to produce a highly accurate and stable medical diagnosis.
+""")
+
+with st.expander("📖 Glossary of Metrics & Techniques (Click to expand)"):
+    st.markdown("""
+    * **F1-Score:** A balanced metric that combines Precision and Recall. It is the gold standard for medical datasets where healthy patients heavily outnumber sick patients, ensuring the model isn't "cheating" by just guessing everyone is healthy.
+    * **Accuracy:** The overall percentage of correct predictions. While intuitive, it can be misleading in imbalanced medical data.
+    * **Recall (Sensitivity):** The percentage of actual sick patients that the model successfully identified. Missing a sick patient is incredibly dangerous, making high recall a critical clinical requirement.
+    * **SHAP (SHapley Additive exPlanations):** An "Explainable AI" technique that looks under the hood of a black-box model. It breaks down a specific prediction to show exactly how much each feature (like TSH or Age) pushed the model toward predicting "Healthy" or "Sick".
+    """)
+
+st.markdown("---")
 
 tsh_shift = st.slider("TSH Shift Value (Research suggests 1.25 is a realistic multiplier for Asian populations)", min_value=1.0, max_value=2.0, value=1.25, step=0.05)
 st.write("Note that the Asian population data is synthetic, created from the Western dataset with realistic (25% increase) shifts in TSH and age based on research.")
+
 @st.cache_data
 def load_and_prepare_data(shift_val):
     population_a = pd.read_csv('archive/cleaned_dataset_Thyroid1.csv')
@@ -28,7 +49,7 @@ def load_and_prepare_data(shift_val):
     healthy_mask = population_b[target_col] == healthy_label
     sick_mask = population_b[target_col] != healthy_label
 
-    # Itt használjuk a paraméterként kapott értéket
+    # Using the parameter value here
     population_b.loc[healthy_mask, 'TSH'] = population_b.loc[healthy_mask, 'TSH'] * shift_val + 0.5
     population_b.loc[sick_mask, 'age'] = population_b.loc[sick_mask, 'age'] * 1.15
 
@@ -51,9 +72,8 @@ def load_and_prepare_data(shift_val):
 
     return X_train_A, X_test_A, y_train_A, y_test_A, X_test_B, y_test_B, population_b
 
-# 3. A függvény meghívásakor átadjuk a slider aktuális értékét
+# Passing the slider's current value when calling the function
 X_train_A, X_test_A, y_train_A, y_test_A, X_test_B, y_test_B, pop_b = load_and_prepare_data(tsh_shift)
-
 
 @st.cache_resource
 def train_models(current_pop_b):
@@ -78,14 +98,13 @@ def train_models(current_pop_b):
 
     return model_base, model_recal
 
-
 model_base, model_recalibrated = train_models(pop_b)
 
 tab1, tab2, tab3, tab4 = st.tabs(["1. Base model (Western population)", "2. Domain Shift (Asian population)", "3. Recalibrated model", "4. Patient simulation"])
 
 with tab1:
     st.header("1. Step: Base model")
-    st.write("This model was trained on a Western population. Let's see how it performs on its own demographic.")
+    st.write("This model was trained exclusively on a Western population. Let's see how it performs on its own demographic.")
 
     preds_A = model_base.predict(X_test_A)
     f1_A = f1_score(y_test_A, preds_A, average='macro')
@@ -94,8 +113,7 @@ with tab1:
 
 with tab2:
     st.header("Step 2: Data Shift and the AI's Collapse")
-    st.write(
-        "We will now test the same Western model on the Asian demographic.")
+    st.write("We will now test the exact same Western model on the Asian demographic without any adjustments.")
 
     preds_B = model_base.predict(X_test_B)
     f1_B = f1_score(y_test_B, preds_B, average='macro')
@@ -104,8 +122,7 @@ with tab2:
     st.metric(label="F1-Score (Asian Data)", value=f"{f1_B * 100:.2f}%", delta=delta_val, delta_color="red")
 
     st.subheader("Why did the model fail? (SHAP Analysis)")
-    st.write(
-        "The figures below show how the higher healthy TSH levels confused the decision logic.")
+    st.write("Using SHAP (SHapley Additive exPlanations), we can peek inside the AI's logic. The figures below show how the naturally higher, yet completely healthy TSH levels in the Asian population confused the Western model's rigid decision logic, triggering false positives.")
 
     col1, col2 = st.columns(2)
     explainer = shap.TreeExplainer(model_base)
@@ -131,20 +148,18 @@ with tab2:
         plt.clf()
 
 with tab3:
-    st.header("3. Step: AI Recalibration és Fair Decision-Making")
-    st.write(
-        "The model was retrained on a comprehensive dataset incorporating both Western and Asian populations, explicitly providing demographic context via an is_asian flag.")
+    st.header("3. Step: AI Recalibration and Fair Decision-Making")
+    st.write("The model was retrained on a comprehensive dataset incorporating both Western and Asian populations, explicitly providing demographic context via an `is_asian` flag.")
 
     X_test_A_recal = X_test_A.copy()
     X_test_A_recal['is_asian'] = 0
     X_test_B_recal = X_test_B.copy()
     X_test_B_recal['is_asian'] = 1
 
-    # Életszerű zaj hozzáadása
+    # Adding realistic noise
     np.random.seed(42)
     X_test_B_recal_noisy = X_test_B_recal.copy()
-    X_test_B_recal_noisy['TSH'] = X_test_B_recal_noisy['TSH'] * np.random.uniform(0.98, 1.02,
-                                                                                  size=len(X_test_B_recal_noisy))
+    X_test_B_recal_noisy['TSH'] = X_test_B_recal_noisy['TSH'] * np.random.uniform(0.98, 1.02, size=len(X_test_B_recal_noisy))
 
     preds_A_recal = model_recalibrated.predict(X_test_A_recal)
     preds_B_recal = model_recalibrated.predict(X_test_B_recal_noisy)
@@ -161,110 +176,105 @@ with tab3:
 
     col5, col6 = st.columns(2)
     col5.metric(label="New F1-Score (Western data)", value=f"{f1_A_recal * 100:.2f}%")
-    col6.metric(label="New F1-Score (Asian data)", value=f"{f1_B_recal * 100:.2f}%", delta="+ Javítva",
-                delta_color="normal")
+    col6.metric(label="New F1-Score (Asian data)", value=f"{f1_B_recal * 100:.2f}%", delta="+ Improved", delta_color="normal")
 
-    st.write(
-        "But what are these scores, and why are they important?")
-    st.write(
-        "Accuracy shows us the big picture: out of all patients, how many did the model correctly identify as either healthy or sick?")
-    st.write(
-        "But in the world of medical AI, accuracy isn't everything. Let's say the model predicts 'unhealthy' only if it is incredibly sure. In this case, our precision will be excellent, since almost every patient it flagged as unhealthy truly is. However, by being so overly cautious, it will completely miss dozens of early-stage patients.")
-    st.write(
-        "To solve this problem, we use another metric: recall, which tells us how many unhealthy patients our model actually successfully found out of all the truly unhealthy ones.")
-    st.write(
-        "And finally, our F1 score. Instead of just validating our model on a single, easily skewed metric, the F1 score evaluates it based on a balance of both precision and recall.")
+    st.markdown("---")
+    st.subheader("Why do we look at multiple metrics?")
+    st.write("**Accuracy** shows us the big picture: out of all patients, how many did the model correctly identify as either healthy or sick?")
+    st.write("But in the world of medical AI, accuracy isn't everything. Let's say the model predicts 'unhealthy' only if it is incredibly sure. In this case, our precision will be excellent, since almost every patient it flagged as unhealthy truly is. However, by being so overly cautious, it will completely miss dozens of early-stage patients.")
+    st.write("To solve this problem, we use another metric: **Recall**, which tells us how many unhealthy patients our model actually successfully found out of all the truly unhealthy ones.")
+    st.write("Finally, our **F1-Score**. Instead of just validating our model on a single, easily skewed metric like Accuracy, the F1 score evaluates it based on a strict balance of both Precision and Recall.")
 
-    with tab4:
-        st.header("Patient Simulator")
-        st.write("Input a hypothetical patient's data to see how the two models differ in their diagnosis.")
+with tab4:
+    st.header("Patient Simulator")
+    st.write("Input a hypothetical patient's data to see how the two models differ in their diagnosis.")
 
-        # Checkbox for full simulation mode
-        full_sim = st.checkbox("Full Simulation")
+    # Checkbox for full simulation mode
+    full_sim = st.checkbox("Full Simulation")
 
-        input_col, result_col = st.columns([1, 1])
+    input_col, result_col = st.columns([1, 1])
 
-        with input_col:
-            st.subheader("Patient Vitals")
-            patient_data = {}
+    with input_col:
+        st.subheader("Patient Vitals")
+        patient_data = {}
 
-            patient_data['age'] = st.number_input("Age", min_value=1, max_value=100, value=45)
+        patient_data['age'] = st.number_input("Age", min_value=1, max_value=100, value=45)
 
-            gender_col = next((col for col in X_train_A.columns if col.lower() in ['sex', 'gender']), None)
-            if gender_col:
-                patient_data[gender_col] = st.selectbox(
-                    f"Gender ({gender_col})",
-                    options=[0, 1],
-                    format_func=lambda x: "Female (0)" if x == 0 else "Male (1)"
-                )
-
-            # Conditionally render TSH based on simulation mode
-            if full_sim:
-                patient_data['TSH'] = st.number_input("TSH Level", min_value=0.0, value=6.2, step=0.1)
-            else:
-                patient_data['TSH'] = st.slider("TSH Level", min_value=0.0, max_value=15.0, value=6.2, step=0.1)
-
-            demographic = st.selectbox(
-                "Demographic Context",
+        gender_col = next((col for col in X_train_A.columns if col.lower() in ['sex', 'gender']), None)
+        if gender_col:
+            patient_data[gender_col] = st.selectbox(
+                f"Gender ({gender_col})",
                 options=[0, 1],
-                format_func=lambda x: "Asian Population" if x == 1 else "Western Population"
+                format_func=lambda x: "Female (0)" if x == 0 else "Male (1)"
             )
 
-            if full_sim:
-                st.markdown("---")
-                st.write("**Detailed datapoints:**")
-                for col in X_train_A.columns:
-                    if col not in patient_data:
-                        unique_vals = X_train_A[col].dropna().unique()
-                        is_binary = set(unique_vals).issubset({0, 1, 0.0, 1.0})
+        # Conditionally render TSH based on simulation mode
+        if full_sim:
+            patient_data['TSH'] = st.number_input("TSH Level", min_value=0.0, value=6.2, step=0.1)
+        else:
+            patient_data['TSH'] = st.slider("TSH Level", min_value=0.0, max_value=15.0, value=6.2, step=0.1)
 
-                        median_val = X_train_A[col].median()
+        demographic = st.selectbox(
+            "Demographic Context",
+            options=[0, 1],
+            format_func=lambda x: "Asian Population" if x == 1 else "Western Population"
+        )
 
-                        if is_binary:
-                            patient_data[col] = st.selectbox(
-                                f"{col}",
-                                options=[0, 1],
-                                index=0 if median_val == 0 else 1,
-                                format_func=lambda x: "True" if x == 1 else "False"
-                            )
-                        else:
-                            patient_data[col] = st.number_input(f"{col}", value=float(median_val))
-            else:
-                # Silently fill the rest with median values
-                for col in X_train_A.columns:
-                    if col not in patient_data:
-                        patient_data[col] = X_train_A[col].median()
+        if full_sim:
+            st.markdown("---")
+            st.write("**Detailed datapoints:**")
+            for col in X_train_A.columns:
+                if col not in patient_data:
+                    unique_vals = X_train_A[col].dropna().unique()
+                    is_binary = set(unique_vals).issubset({0, 1, 0.0, 1.0})
 
-        # Create DataFrames for prediction
-        patient_df_base = pd.DataFrame([patient_data])
+                    median_val = X_train_A[col].median()
 
-        # Reorder columns to exactly match the base model's training data
-        patient_df_base = patient_df_base[X_train_A.columns]
+                    if is_binary:
+                        patient_data[col] = st.selectbox(
+                            f"{col}",
+                            options=[0, 1],
+                            index=0 if median_val == 0 else 1,
+                            format_func=lambda x: "True" if x == 1 else "False"
+                        )
+                    else:
+                        patient_data[col] = st.number_input(f"{col}", value=float(median_val))
+        else:
+            # Silently fill the rest with median values
+            for col in X_train_A.columns:
+                if col not in patient_data:
+                    patient_data[col] = X_train_A[col].median()
 
-        patient_df_recal = patient_df_base.copy()
-        patient_df_recal['is_asian'] = demographic
+    # Create DataFrames for prediction
+    patient_df_base = pd.DataFrame([patient_data])
 
-        # Reorder columns to exactly match the recalibrated model's training data
-        expected_recal_cols = list(X_train_A.columns) + ['is_asian']
-        patient_df_recal = patient_df_recal[expected_recal_cols]
+    # Reorder columns to exactly match the base model's training data
+    patient_df_base = patient_df_base[X_train_A.columns]
 
-        # Run predictions
-        pred_base = model_base.predict(patient_df_base)[0]
-        pred_recal = model_recalibrated.predict(patient_df_recal)[0]
+    patient_df_recal = patient_df_base.copy()
+    patient_df_recal['is_asian'] = demographic
 
-        with result_col:
-            st.subheader("AI Diagnosis Results")
+    # Reorder columns to exactly match the recalibrated model's training data
+    expected_recal_cols = list(X_train_A.columns) + ['is_asian']
+    patient_df_recal = patient_df_recal[expected_recal_cols]
 
-            st.write("**1. Western Base Model:**")
-            if pred_base == 0:
-                st.success("Diagnosis: Healthy")
-            else:
-                st.error("Diagnosis: Sick")
+    # Run predictions
+    pred_base = model_base.predict(patient_df_base)[0]
+    pred_recal = model_recalibrated.predict(patient_df_recal)[0]
 
-            st.write("---")
+    with result_col:
+        st.subheader("AI Diagnosis Results")
 
-            st.write("**2. Recalibrated Model:**")
-            if pred_recal == 0:
-                st.success("Diagnosis: Healthy")
-            else:
-                st.error("Diagnosis: Sick")
+        st.write("**1. Western Base Model:**")
+        if pred_base == 0:
+            st.success("Diagnosis: Healthy")
+        else:
+            st.error("Diagnosis: Sick")
+
+        st.write("---")
+
+        st.write("**2. Recalibrated Model:**")
+        if pred_recal == 0:
+            st.success("Diagnosis: Healthy")
+        else:
+            st.error("Diagnosis: Sick")
